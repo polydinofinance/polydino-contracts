@@ -940,7 +940,7 @@ contract DinoToken is BEP20('Dino Token', 'DINO') {
     // Which is copied and modified from COMPOUND:
     // https://github.com/compound-finance/compound-protocol/blob/master/contracts/Governance/Comp.sol
 
-    /// @notice A record of each accounts delegate
+    /// @dev A record of each accounts delegate
     mapping (address => address) internal _delegates;
 
     /// @notice A checkpoint for marking number of votes from a given block
@@ -1279,10 +1279,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
         // We do some fancy math here. Basically, any point in time, the amount of DINO
         // entitled to a user but is pending to be distributed is:
         //
-        //   pending reward = (user.amount * pool.accDinoPerShare) - user.rewardDebt
+        //   pending reward = (user.amount * pool.accRewardPerShare) - user.rewardDebt
         //
         // Whenever a user deposits or withdraws LP tokens to a pool. Here's what happens:
-        //   1. The pool's `accDinoPerShare` (and `lastRewardBlock`) gets updated.
+        //   1. The pool's `accRewardPerShare` (and `lastRewardBlock`) gets updated.
         //   2. User receives the pending reward sent to his/her address.
         //   3. User's `amount` gets updated.
         //   4. User's `rewardDebt` gets updated.
@@ -1293,7 +1293,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         IBEP20 lpToken;           // Address of LP token contract.
         uint256 allocPoint;       // How many allocation points assigned to this pool. DINOs to distribute per block.
         uint256 lastRewardBlock;  // Last block number that DINOs distribution occurs.
-        uint256 accDinoPerShare;   // Accumulated DINOs per share, times 1e12. See below.
+        uint256 accRewardPerShare;   // Accumulated DINOs per share, times 1e12. See below.
         uint16 depositFeeBP;      // Deposit fee in basis points
         uint256 lpSupply;
     }
@@ -1303,7 +1303,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     // Dev address.
     address public devaddr;
     // DINO tokens created per block.
-    uint256 public DinoPerBlock;
+    uint256 public tokenPerBlock;
     // Bonus muliplier for early dino makers.
     uint256 public constant BONUS_MULTIPLIER = 1;
     // Deposit Fee address
@@ -1324,7 +1324,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
     event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
     event SetFeeAddress(address indexed user, address indexed newAddress);
     event SetDevAddress(address indexed user, address indexed newAddress);
-    event UpdateEmissionRate(address indexed user, uint256 DinoPerBlock);
+    event UpdateEmissionRate(address indexed user, uint256 tokenPerBlock);
     event addPool(uint256 indexed pid, address lpToken, uint256 allocPoint, uint256 depositFeeBP);
     event setPool(uint256 indexed pid, address lpToken, uint256 allocPoint, uint256 depositFeeBP);
     event UpdateStartBlock(uint256 newStartBlock);
@@ -1333,13 +1333,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
         DinoToken _dino,
         address _devaddr,
         address _feeAddress,
-        uint256 _DinoPerBlock,
+        uint256 _tokenPerBlock,
         uint256 _startBlock
     ) public {
         dino = _dino;
         devaddr = _devaddr;
         feeAddress = _feeAddress;
-        DinoPerBlock = _DinoPerBlock;
+        tokenPerBlock = _tokenPerBlock;
         startBlock = _startBlock;
     }
 
@@ -1369,7 +1369,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         lpToken : _lpToken,
         allocPoint : _allocPoint,
         lastRewardBlock : lastRewardBlock,
-        accDinoPerShare : 0,
+        accRewardPerShare : 0,
         depositFeeBP : _depositFeeBP,
         lpSupply: 0
         }));
@@ -1399,13 +1399,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
     function pendingToken(uint256 _pid, address _user) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
-        uint256 accDinoPerShare = pool.accDinoPerShare;
+        uint256 accRewardPerShare = pool.accRewardPerShare;
         if (block.number > pool.lastRewardBlock && pool.lpSupply != 0 && totalAllocPoint > 0) {
             uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 dinoReward = multiplier.mul(DinoPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-            accDinoPerShare = accDinoPerShare.add(dinoReward.mul(1e12).div(pool.lpSupply));
+            uint256 dinoReward = multiplier.mul(tokenPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+            accRewardPerShare = accRewardPerShare.add(dinoReward.mul(1e12).div(pool.lpSupply));
         }
-        return user.amount.mul(accDinoPerShare).div(1e12).sub(user.rewardDebt);
+        return user.amount.mul(accRewardPerShare).div(1e12).sub(user.rewardDebt);
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
@@ -1427,10 +1427,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 dinoReward = multiplier.mul(DinoPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 dinoReward = multiplier.mul(tokenPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         dino.mint(devaddr, dinoReward.div(10));
         dino.mint(address(this), dinoReward);
-        pool.accDinoPerShare = pool.accDinoPerShare.add(dinoReward.mul(1e12).div(pool.lpSupply));
+        pool.accRewardPerShare = pool.accRewardPerShare.add(dinoReward.mul(1e12).div(pool.lpSupply));
         pool.lastRewardBlock = block.number;
     }
 
@@ -1440,7 +1440,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
         if (user.amount > 0) {
-            uint256 pending = user.amount.mul(pool.accDinoPerShare).div(1e12).sub(user.rewardDebt);
+            uint256 pending = user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt);
             if (pending > 0) {
                 safeDinoTransfer(msg.sender, pending);
             }
@@ -1459,7 +1459,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
                 pool.lpSupply = pool.lpSupply.add(_amount);
             }
         }
-        user.rewardDebt = user.amount.mul(pool.accDinoPerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(pool.accRewardPerShare).div(1e12);
         emit Deposit(msg.sender, _pid, _amount);
     }
 
@@ -1469,7 +1469,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
         UserInfo storage user = userInfo[_pid][msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
         updatePool(_pid);
-        uint256 pending = user.amount.mul(pool.accDinoPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pending = user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt);
         if (pending > 0) {
             safeDinoTransfer(msg.sender, pending);
         }
@@ -1478,7 +1478,7 @@ contract MasterChef is Ownable, ReentrancyGuard {
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
             pool.lpSupply = pool.lpSupply.sub(_amount);
         }
-        user.rewardDebt = user.amount.mul(pool.accDinoPerShare).div(1e12);
+        user.rewardDebt = user.amount.mul(pool.accRewardPerShare).div(1e12);
         emit Withdraw(msg.sender, _pid, _amount);
     }
 
@@ -1527,10 +1527,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
     }
 
     //Pancake has to add hidden dummy pools inorder to alter the emission, here we make it simple and transparent to all.
-    function updateEmissionRate(uint256 _DinoPerBlock) external onlyOwner {
+    function updateEmissionRate(uint256 _tokenPerBlock) external onlyOwner {
         massUpdatePools();
-        DinoPerBlock = _DinoPerBlock;
-        emit UpdateEmissionRate(msg.sender, _DinoPerBlock);
+        tokenPerBlock = _tokenPerBlock;
+        emit UpdateEmissionRate(msg.sender, _tokenPerBlock);
     }
 
     // Only update before start of farm
